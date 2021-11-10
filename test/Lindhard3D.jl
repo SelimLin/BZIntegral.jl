@@ -1,13 +1,18 @@
+using BZIntegral.BZInt3D
 using LinearAlgebra
 using LaTeXStrings
-include("BZInt3D.jl")
-using .BZInt3D
 using BenchmarkTools
 using Plots
 gr()
 Ek(k)=sum(k.*k)/2
 Dk(k,q,v) = (v+Ek(k)-Ek(k+q))*4*pi
 heaviside(t) = 0.5 * (sign(t) + 1)
+
+"""
+               fₖ - fₖ₊ₚ
+χ(p,ω) = ∫d³k --------------
+              ϵₖ-ϵₖ₊ₚ+ω+iη
+"""
 
 function ReLindhard3D(q,v)
     if q==0. && v==0.

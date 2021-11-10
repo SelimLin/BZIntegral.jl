@@ -1,13 +1,18 @@
+using BZIntegral.BZInt2D
 using LinearAlgebra
 using LaTeXStrings
-include("BZInt2D.jl")
-using .BZInt2D
 using BenchmarkTools
 using Plots
 gr()
 Ek(k)=sum(k.*k)/2
 Dk(k,q,v) = (v+Ek(k)-Ek(k+q))*2*pi
 heaviside(t) = 0.5 * (sign(t) + 1)
+
+"""
+               fₖ (1- fₖ₊ₚ)      fₖ (1- fₖ₋ₚ)
+χ(p,ω) = ∫d²k ------------- +  -------------
+               ω-ϵₖ+ϵₖ₊ₚ+iη      -ω-ϵₖ+ϵₖ₋ₚ-iη
+"""
 
 function ReLindhard2D(q,v)
     if q==0. && v==0.
