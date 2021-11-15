@@ -33,32 +33,6 @@ function ImLindhard2D(q,v)
     end
 end
 
-function NLinhard2D_uniform(q)
-    Nx,Ny = Int.(ceil.(8 .+4*abs.(q)))
-    Nx = isodd(Nx) ? Nx : Nx+1
-    Ny = isodd(Ny) ? Ny : Ny+1
-    kx = collect(range(min(-1.125-q[1],-1.125),max(1.120-q[1],1.120),length=Nx))
-    ky = collect(range(min(-1.125-q[2],-1.125),max(1.120-q[2],1.120),length=Ny))
-    area = (kx[end]-kx[1])*(ky[end]-ky[1])
-    Emesh_k = zeros(Nx,Ny)
-    Emesh_kq = zeros(Nx,Ny)
-    Dmesh = zeros(Nx,Ny)
-    k = zeros(2)
-        for iy in 1:Ny
-            for ix in 1:Nx
-                k[:] .= kx[ix],ky[iy]
-                Emesh_k[ix,iy] = Ek(k)
-                Emesh_kq[ix,iy] = Ek(k+q)
-                Dmesh[ix,iy] = Dk(k,q,0.)
-            end
-        end
-    Wmesh_k = Quad2DRuleΘ(Emesh_k,0.5)
-    Wmesh_kq = Quad2DRuleΘ(Emesh_kq,0.5)
-    Wmesh = Wmesh_k-Wmesh_kq
-    out=sum(Wmesh./Dmesh)*area
-    return out
-end
-
 function NLinhard2D_frac(q,v=0.)
     Nx,Ny = Int.(ceil.(8 .+4*abs.(q)))
     Nx = isodd(Nx) ? Nx : Nx+1
@@ -117,23 +91,9 @@ end
 Qlist = zeros(2,40)
 Qlist[1,:] = collect(range(0.02,4,length=40))
 qlist = mapslices(norm,Qlist,dims=1)
-@time res_uniform = mapslices(NLinhard2D_uniform,Qlist,dims=1)
 @time res_frac = mapslices(NLinhard2D_frac,Qlist,dims=1)
 anal = ReLindhard2D.(qlist,0)
 
-
-# uniform rule testing
-p1=scatter(qlist[:],-res_uniform[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,qlist[:],-anal[:],title=L"\chi_0(q,\omega=0), uniform rule ",label="accurate",color=:black)
-xlabel!(p1,"q/kF")
-ylabel!(p1,L"-\chi_0/N(0)")
-
-p2 = scatter(qlist[:],abs.((anal[:]-res_uniform[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,"q/kF")
-ylabel!(p2,"err")
-yaxis!(p2,:log10)
-# P = plot(p1,p2,layout=2,size=(800,300),dpi=500,left_margin = 5Plots.mm,bottom_margin=5Plots.mm)
-# savefig(P,"test2D/uniform.png")
 
 # fractional rule testing
 p1=scatter(qlist[:],-res_frac[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
