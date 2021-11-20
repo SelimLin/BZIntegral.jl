@@ -1,11 +1,18 @@
 using BZIntegral.BZInt2D
 using LinearAlgebra
 using LaTeXStrings
-using BenchmarkTools
 using Plots
 gr()
-Ek(k)=sum(k.*k)/2
-Dk(k,q,v) = (v+Ek(k)-Ek(k+q))*2*pi
+
+newaxis = [CartesianIndex()]
+
+function KmeshGen2D(kxrange,kyrange,SIZE)
+    kx = range(kxrange[1],kxrange[2],length=SIZE[1])
+    ky = range(kyrange[1],kyrange[2],length=SIZE[2])
+    return kx[:,newaxis],ky[newaxis,:]
+end
+# Ek(k)=sum(k.*k)/2
+# Dk(k,q,v) = (v+Ek(k)-Ek(k+q))*2*pi
 heaviside(t) = 0.5 * (sign(t) + 1)
 
 """
@@ -33,116 +40,94 @@ function ImLindhard2D(q,v)
     end
 end
 
-function NLinhard2D_frac(q,v=0.)
-    Nx,Ny = Int.(ceil.(8 .+4*abs.(q)))
+function NLinhard2D_Re(qx,v=0.) # qx ≥ 0
+    q = abs(qx)
+    Nx = Int.(ceil.(8 .+4*abs.(q)))
     Nx = isodd(Nx) ? Nx : Nx+1
-    Ny = isodd(Ny) ? Ny : Ny+1
-    kx = collect(range(min(-1.125-q[1],-1.125),max(1.120-q[1],1.120),length=Nx))
-    ky = collect(range(min(-1.125-q[2],-1.125),max(1.120-q[2],1.120),length=Ny))
-    area = (kx[end]-kx[1])*(ky[end]-ky[1])
-    Emesh_k = zeros(Nx,Ny)
-    Emesh_kq = zeros(Nx,Ny)
-    Dmesh = zeros(Nx,Ny)
-    k = zeros(2)
-        for iy in 1:Ny
-            for ix in 1:Nx
-                k[:] .= kx[ix],ky[iy]
-                Emesh_k[ix,iy] = Ek(k)
-                Emesh_kq[ix,iy] = Ek(k+q)
-                Dmesh[ix,iy] = Dk(k,q,v)
-            end
-        end
-    Wmesh_k = Quad2DRuleΘ𝔇(Emesh_k,0.5,Dmesh)
-    Wmesh_kq = Quad2DRuleΘ𝔇(Emesh_kq,0.5,Dmesh)
-    Wmesh = Wmesh_k-Wmesh_kq
-    out=sum(Wmesh)*area
+    KX,KY = KmeshGen2D([-1.125-q,1.120],[-1.125,1.120],(Nx,9))
+    vol = (1.120+1.125+q)*(1.120+1.125)
+    Ek = (KX.^2 .+ KY.^2 )./2
+    Ekplusq= ((KX.+q).^2 .+ KY.^2)./2
+    Dk = (v.+Ek.-Ekplusq).*(2*pi)
+    eF = 0.5
+    Wmesh = Quad2DRuleΘ𝔇(Ek,eF,Dk)-Quad2DRuleΘ𝔇(Ekplusq,eF,Dk)
+    out=sum(Wmesh)*vol
     return out
 end
 
-function NLinhard2D_Im(q,v=0.)
-    Nx,Ny = Int.(ceil.(8 .+4*abs.(q)))
+function NLinhard2D_Im(qx,v=0.) # qx ≥ 0
+    q = abs(qx)
+    Nx = Int.(ceil.(8 .+4*abs.(q)))
     Nx = isodd(Nx) ? Nx : Nx+1
-    Ny = isodd(Ny) ? Ny : Ny+1
-    kx = collect(range(min(-1.125-q[1],-1.125),max(1.120-q[1],1.120),length=Nx))
-    ky = collect(range(min(-1.125-q[2],-1.125),max(1.120-q[2],1.120),length=Ny))
-    area = (kx[end]-kx[1])*(ky[end]-ky[1])
-    Emesh_k = zeros(Nx,Ny)
-    Emesh_kq = zeros(Nx,Ny)
-    Dmesh = zeros(Nx,Ny)
-    k = zeros(2)
-        for iy in 1:Ny
-            for ix in 1:Nx
-                k[:] .= kx[ix],ky[iy]
-                Emesh_k[ix,iy] = Ek(k)
-                Emesh_kq[ix,iy] = Ek(k+q)
-                Dmesh[ix,iy] = Dk(k,q,v)
-            end
-        end
-    Wmesh_k = Quad2DRuleΘδ(Emesh_k,0.5,Dmesh,2)
-    Wmesh_kq = Quad2DRuleΘδ(Emesh_kq,0.5,Dmesh,2)
-    Wmesh = Wmesh_k-Wmesh_kq
-    out=-sum(Wmesh)*area*pi
+    KX,KY = KmeshGen2D([-1.125-q,1.120],[-1.125,1.120],(Nx,9))
+    vol = (1.120+1.125+q)*(1.120+1.125)
+    Ek = (KX.^2 .+ KY.^2)./2
+    Ekplusq= ((KX.+q).^2 .+ KY.^2)./2
+    Dk = (v.+Ek.-Ekplusq).*(2*pi)
+    eF = 0.5
+    Wmesh = Quad2DRuleΘδ(Ek,eF,Dk)-Quad2DRuleΘδ(Ekplusq,eF,Dk)
+    out=-sum(Wmesh)*vol*pi
     return out
 end
-
-
 
 # zero frequency testing
-Qlist = zeros(2,40)
-Qlist[1,:] = collect(range(0.02,4,length=40))
-qlist = mapslices(norm,Qlist,dims=1)
-@time res_frac = mapslices(NLinhard2D_frac,Qlist,dims=1)
-anal = ReLindhard2D.(qlist,0)
+qlist = range(0.02,4,length=40)
+@time res= NLinhard2D_Re.(qlist,0.)
+anal = ReLindhard2D.(qlist,0.)
 
+begin
+    p1=scatter(qlist[:],-res[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
+    plot!(p1,qlist[:],-anal[:],title=L"\chi_0(q,\omega=0)",label="accurate",color=:black)
+    xlabel!(p1,"q/kF")
+    ylabel!(p1,L"-\chi_0/N(0)")
+end
 
-# fractional rule testing
-p1=scatter(qlist[:],-res_frac[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,qlist[:],-anal[:],title=L"\chi_0(q,\omega=0), fractional rule ",label="accurate",color=:black)
-xlabel!(p1,"q/kF")
-ylabel!(p1,L"-\chi_0/N(0)")
-
-p2 = scatter(qlist[:],abs.((anal[:]-res_frac[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,"q/kF")
-ylabel!(p2,"err")
-yaxis!(p2,:log10)
-# P = plot(p1,p2,layout=2,size=(800,300),dpi=500,left_margin = 5Plots.mm,bottom_margin=5Plots.mm)
-# savefig(P,"test2D/frac1.png")
+begin
+    p2 = scatter(qlist[:],abs.((anal[:]-res[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
+    xlabel!(p2,"q/kF")
+    ylabel!(p2,"err")
+    yaxis!(p2,:log10)
+end
 
 
 # finite frequency testing
-q = [0.5,0]
-wlist = collect(range(0,1,length=40))
-@time res_frac = [NLinhard2D_frac(q,w) for w in wlist]
-anal = ReLindhard2D.(q[1],wlist)
+q=0.5
+wlist = range(0,1,length=40)
+@time res_Re = NLinhard2D_Re.(q,wlist)
+@time res_Im = NLinhard2D_Im.(q,wlist)
+anal_Re = ReLindhard2D.(q,wlist)
+anal_Im = ImLindhard2D.(q,wlist)
 
-# fractional rule testing
-p1=scatter(wlist[:],-res_frac[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,wlist[:],-anal[:],title=L"\chi_0(q=0.5k_F,\omega), fractional rule ",label="accurate",color=:black)
-xlabel!(p1,L"\omega/2\epsilon_F")
+begin
+p1=scatter(qlist[:],-res_Re[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
+plot!(p1,qlist[:],-anal_Re[:],title=L"Re\chi_0(q=0.5k_F,\omega)",label="accurate",color=:black)
+xlabel!(p1,"q/kF")
 ylabel!(p1,L"-\chi_0/N(0)")
+end
 
-p2 = scatter(wlist[:],abs.((anal[:]-res_frac[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,L"\omega/2\epsilon_F")
+begin
+p2 = scatter(qlist[:],abs.((anal_Re[:]-res_Re[:])./anal_Re[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
+xlabel!(p2,"q/kF")
 ylabel!(p2,"err")
 yaxis!(p2,:log10)
-# P = plot(p1,p2,layout=2,size=(800,300),dpi=500,left_margin = 5Plots.mm,bottom_margin=5Plots.mm)
-# savefig(P,"test2D/frac2.png")
+end
 
-# finite frequency imaginary part testing
-q = [0.5,0]
-wlist = collect(range(0,1,length=40))
-@time res_delta = [NLinhard2D_Im(q,w) for w in wlist]
-anal = ImLindhard2D.(q[1],wlist)
+begin
+    p1=scatter(qlist[:],-res_Im[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
+    plot!(p1,qlist[:],-anal_Im[:],title=L"Im\chi_0(q=0.5k_F,\omega)",label="accurate",color=:black)
+    xlabel!(p1,"q/kF")
+    ylabel!(p1,L"-\chi_0/N(0)")
+end
+    
+begin
+    p2 = scatter(qlist[:],abs.((anal_Im[:]-res_Im[:])./anal_Im[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
+    xlabel!(p2,"q/kF")
+    ylabel!(p2,"err")
+    yaxis!(p2,:log10)
+end
 
-# deltawithin rule testing
-p1=scatter(wlist[:],-res_delta[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,wlist[:],-anal[:],title=L"Im\chi_0(q=0.5k_F,\omega), delta rule ",label="accurate",color=:black)
-xlabel!(p1,L"\omega/2\epsilon_F")
-ylabel!(p1,L"-Im\chi_0/N(0)")
 
-p2 = scatter(wlist[:],abs.((anal[:]-res_delta[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,L"\omega/2\epsilon_F")
-ylabel!(p2,"err")
-yaxis!(p2,:log10)
-# P = plot(p1,p2,layout=2,size=(800,300),dpi=500,left_margin = 5Plots.mm,bottom_margin=5Plots.mm)
-# savefig(P,"test2D/delta.png")
+
+
+
+

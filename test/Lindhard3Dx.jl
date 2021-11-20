@@ -1,12 +1,23 @@
 using BZIntegral.BZInt3D
 using LinearAlgebra
 using LaTeXStrings
-using BenchmarkTools
+
 using Plots
 gr()
-Ek(k)=sum(k.*k)/2
-Dk(k,q,v) = (v+Ek(k)-Ek(k+q))*4*pi
+
+newaxis = [CartesianIndex()]
+
+function KmeshGen3D(kxrange,kyrange,kzrange,SIZE)
+    kx = range(kxrange[1],kxrange[2],length=SIZE[1])
+    ky = range(kyrange[1],kyrange[2],length=SIZE[2])
+    kz = range(kzrange[1],kzrange[2],length=SIZE[3])
+    return kx[:,newaxis,newaxis],ky[newaxis,:,newaxis],kz[newaxis,newaxis,:]
+end
+
+# Ek(k)=sum(k.*k)/2
+# Dk(k,q,v) = (v+Ek(k)-Ek(k+q))*4*pi
 heaviside(t) = 0.5 * (sign(t) + 1)
+
 
 """
                fₖ (1- fₖ₊ₚ)      fₖ (1- fₖ₋ₚ)
@@ -35,174 +46,92 @@ function ImLindhard3D(q,v)
     end 
 end
 
-
-function NLinhard3D_fracX(q,v=0.) 
-    # can not calculate case v=0, where tetrahedron have zero denominator
-    Nx,Ny,Nz = Int.(ceil.(8 .+4*abs.(q)))
-    Nx = isodd(Nx) ? Nx : Nx+1
-    Ny = isodd(Ny) ? Ny : Ny+1
-    Nz = isodd(Nz) ? Nz : Nz+1
-    kx = collect(range(min(-1.125-q[1],-1.125),max(1.120-q[1],1.120),length=Nx))
-    ky = collect(range(min(-1.125-q[2],-1.125),max(1.120-q[2],1.120),length=Ny))
-    kz = collect(range(min(-1.125-q[3],-1.125),max(1.120-q[3],1.120),length=Nz))
-    vol = (kx[end]-kx[1])*(ky[end]-ky[1])*(kz[end]-kz[1])
-    Emesh_k = zeros(Nx,Ny,Nz)
-    Emesh_kPq = zeros(Nx,Ny,Nz)
-    Emesh_kMq = zeros(Nx,Ny,Nz)
-    Dmesh1 = zeros(Nx,Ny,Nz)
-    Dmesh2 = zeros(Nx,Ny,Nz)
-    k = zeros(3)
-    for iz in 1:Nz
-        for iy in 1:Ny
-            for ix in 1:Nx
-                k[:] .= kx[ix],ky[iy],kz[iz]
-                Emesh_k[ix,iy,iz] = Ek(k)
-                Emesh_kPq[ix,iy,iz] = Ek(k+q)
-                Emesh_kMq[ix,iy,iz] = Ek(k-q)
-            end
-        end
-    end
-    Dmesh1.=v.-Emesh_k.+Emesh_kPq
-    Dmesh2.=-v.-Emesh_k.+Emesh_kMq
-
-    eF=0.5
-    Wmesh1 = Quad3DRuleΘ𝔇(Emesh_k,eF,Dmesh1)-
-             Quad3DRuleΘΘ𝔇(eF.-Emesh_k,eF.-Emesh_kPq,Dmesh1)
-    Wmesh2 = Quad3DRuleΘ𝔇(Emesh_k,eF,Dmesh2)-
-             Quad3DRuleΘΘ𝔇(eF.-Emesh_k,eF.-Emesh_kMq,Dmesh2)
-    Wmesh = Wmesh1+Wmesh2
-    out=-sum(Wmesh)*vol/4/pi
+function NLinhard3D_ReX(qx,v=0.) # qx ≥ 0
+    q = abs(qx)
+    KX,KY,KZ = KmeshGen3D([-1.125,1.120],[-1.125,1.120],[-1.125,1.120],(9,9,9))
+    vol = (1.120+1.125)*(1.120+1.125)*(1.120+1.125)
+    Ek = (KX.^2 .+ KY.^2 .+ KZ.^2)./2
+    Ekplusq= ((KX.+q).^2 .+ KY.^2 .+ KZ.^2)./2
+    Ekmnusq= ((KX.-q).^2 .+ KY.^2 .+ KZ.^2)./2
+    D1 = (v.-Ek.+Ekplusq).*(4*pi)
+    D2 = (-v.-Ek.+Ekmnusq).*(4*pi)
+    eF = 0.5
+    Wmesh = Quad3DRuleΘ𝔇(Ek,eF,D1,3)-Quad3DRuleΘΘ𝔇(eF.-Ek,eF.-Ekplusq,D1,3)+
+            Quad3DRuleΘ𝔇(Ek,eF,D2,3)-Quad3DRuleΘΘ𝔇(eF.-Ek,eF.-Ekmnusq,D2,3)
+    out=-sum(Wmesh)*vol
     return out
 end
 
-function test_Inter(r) 
-    # can not calculate case v=0, where tetrahedron have zero denominator
-    q=[r,0,0]
-    Nx,Ny,Nz = Int.(ceil.(8 .+4*abs.(q)))
-    Nx = isodd(Nx) ? Nx : Nx+1
-    Ny = isodd(Ny) ? Ny : Ny+1
-    Nz = isodd(Nz) ? Nz : Nz+1
-    kx = collect(range(min(-1.125-q[1],-1.125),max(1.120-q[1],1.120),length=Nx))
-    ky = collect(range(min(-1.125-q[2],-1.125),max(1.120-q[2],1.120),length=Ny))
-    kz = collect(range(min(-1.125-q[3],-1.125),max(1.120-q[3],1.120),length=Nz))
-    vol = (kx[end]-kx[1])*(ky[end]-ky[1])*(kz[end]-kz[1])
-    Emesh_k = zeros(Nx,Ny,Nz)
-    Emesh_kPq = zeros(Nx,Ny,Nz)
-    k = zeros(3)
-    for iz in 1:Nz
-        for iy in 1:Ny
-            for ix in 1:Nx
-                k[:] .= kx[ix],ky[iy],kz[iz]
-                Emesh_k[ix,iy,iz] = Ek(k)
-                Emesh_kPq[ix,iy,iz] = Ek(k+q)
-            end
-        end
-    end
-    eF=0.5
-    Wmesh = Quad3DRuleΘΘ(eF.-Emesh_k,eF.-Emesh_kPq,3)
-    out=sum(Wmesh)*vol/pi
+function NLinhard3D_ImX(qx,v=0.) # qx ≥ 0
+    q = abs(qx)
+    KX,KY,KZ = KmeshGen3D([-1.125,1.120],[-1.125,1.120],[-1.125,1.120],(9,9,9))
+    vol = (1.120+1.125)*(1.120+1.125)*(1.120+1.125)
+    Ek = (KX.^2 .+ KY.^2 .+ KZ.^2)./2
+    Ekplusq= ((KX.+q).^2 .+ KY.^2 .+ KZ.^2)./2
+    Ekmnusq= ((KX.-q).^2 .+ KY.^2 .+ KZ.^2)./2
+    D1 = (v.-Ek.+Ekplusq).*(4*pi)
+    D2 = (-v.-Ek.+Ekmnusq).*(4*pi)
+    eF = 0.5
+
+    Wmesh = Quad3DRuleΘδ(Ek,eF,D1)-Quad3DRuleΘΘδ(eF.-Ek,eF.-Ekplusq,D1)-
+            Quad3DRuleΘδ(Ek,eF,D2)+Quad3DRuleΘΘδ(eF.-Ek,eF.-Ekmnusq,D2)
+    out=sum(Wmesh)*vol*pi
     return out
 end
-(test_Inter(1)-5/12)/(5/12)
-(test_Inter(0.5)-27/32)/(27/32)
-(test_Inter(0.25)-833/768)/(833/768)
 
-@time NLinhard3D_fracX([0.1,0,0],0.0)
-ReLindhard3D(0.1,0.0)
 # zero frequency testing
+qlist = range(0.02,4,length=40)
+@time res= NLinhard3D_ReX.(qlist,0.)
+anal = ReLindhard3D.(qlist,0.)
 
-Qlist = zeros(3,40)
-Qlist[1,:] = collect(range(0.02,4,length=40))
-qlist = mapslices(norm,Qlist,dims=1)
-@time res_frac = [NLinhard3D_fracX(Qlist[:,i]) for i in 1:size(Qlist,2)]
-anal = ReLindhard3D.(qlist,0)
+begin
+    p1=scatter(qlist[:],-res[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
+    plot!(p1,qlist[:],-anal[:],title=L"\chi_0(q,\omega=0)",label="accurate",color=:black)
+    xlabel!(p1,"q/kF")
+    ylabel!(p1,L"-\chi_0/N(0)")
+end
 
-# fractional rule testing
-p1=scatter(qlist[:],-res_frac[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,qlist[:],-anal[:],title=L"\chi_0(q,\omega=0), fractional rule ",label="accurate",color=:black)
-xlabel!(p1,"q/kF")
-ylabel!(p1,L"-\chi_0/N(0)")
-
-p2 = scatter(qlist[:],abs.((anal[:]-res_frac[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,"q/kF")
-ylabel!(p2,"err")
-yaxis!(p2,:log10)
+begin
+    p2 = scatter(qlist[:],abs.((anal[:]-res[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
+    xlabel!(p2,"q/kF")
+    ylabel!(p2,"err")
+    yaxis!(p2,:log10)
+end
 
 
 # finite frequency testing
-q = [0.5,0,0]
-wlist = collect(range(0,1,length=21))
-@time res_frac = [NLinhard3D_fracX(q,w) for w in wlist]
-anal = ReLindhard3D.(q[1],wlist)
+q=0.5
+wlist = range(0,1,length=40)
+@time res_Re = NLinhard3D_ReX.(q,wlist)
+@time res_Im = NLinhard3D_ImX.(q,wlist)
+anal_Re = ReLindhard3D.(q,wlist)
+anal_Im = ImLindhard3D.(q,wlist)
 
-# fractional rule testing
-p1=scatter(wlist[:],-res_frac[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,wlist[:],-anal[:],title=L"\chi_0(q=0.5k_F,\omega), fractional rule ",label="accurate",color=:black)
-xlabel!(p1,L"\omega/2\epsilon_F")
+begin
+p1=scatter(qlist[:],-res_Re[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
+plot!(p1,qlist[:],-anal_Re[:],title=L"Re\chi_0(q=0.5k_F,\omega)",label="accurate",color=:black)
+xlabel!(p1,"q/kF")
 ylabel!(p1,L"-\chi_0/N(0)")
-
-p2 = scatter(wlist[:],abs.((anal[:]-res_frac[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,L"\omega/2\epsilon_F")
-ylabel!(p2,"err")
-yaxis!(p2,:log10)
-
-
-function NLinhard3D_ImX(q,v=0.)
-    # can not calculate case v=0, where tetrahedron have zero denominator
-    Nx,Ny,Nz = Int.(ceil.(8 .+4*abs.(q)))
-    Nx = isodd(Nx) ? Nx : Nx+1
-    Ny = isodd(Ny) ? Ny : Ny+1
-    Nz = isodd(Nz) ? Nz : Nz+1
-    kx = collect(range(min(-1.125-q[1],-1.125),max(1.120-q[1],1.120),length=Nx))
-    ky = collect(range(min(-1.125-q[2],-1.125),max(1.120-q[2],1.120),length=Ny))
-    kz = collect(range(min(-1.125-q[3],-1.125),max(1.120-q[3],1.120),length=Nz))
-    vol = (kx[end]-kx[1])*(ky[end]-ky[1])*(kz[end]-kz[1])
-    Emesh_k = zeros(Nx,Ny,Nz)
-    Emesh_kPq = zeros(Nx,Ny,Nz)
-    Emesh_kMq = zeros(Nx,Ny,Nz)
-    Dmesh1 = zeros(Nx,Ny,Nz)
-    Dmesh2 = zeros(Nx,Ny,Nz)
-    k = zeros(3)
-    for iz in 1:Nz
-        for iy in 1:Ny
-            for ix in 1:Nx
-                k[:] .= kx[ix],ky[iy],kz[iz]
-                Emesh_k[ix,iy,iz] = Ek(k)
-                Emesh_kPq[ix,iy,iz] = Ek(k+q)
-                Emesh_kMq[ix,iy,iz] = Ek(k-q)
-            end
-        end
-    end
-    Dmesh1.=v.-Emesh_k.+Emesh_kPq
-    Dmesh2.=-v.-Emesh_k.+Emesh_kMq
-
-    eF=0.5
-    Wmesh1 = Quad3DRuleΘδ(Emesh_k,eF,Dmesh1)-
-             Quad3DRuleΘΘδ(eF.-Emesh_k,eF.-Emesh_kPq,Dmesh1)
-    Wmesh2 = Quad3DRuleΘδ(Emesh_k,eF,Dmesh2)-
-             Quad3DRuleΘΘδ(eF.-Emesh_k,eF.-Emesh_kMq,Dmesh2)
-    Wmesh = Wmesh1-Wmesh2
-    out=sum(Wmesh)*vol/4
-    return out
 end
 
-ImLindhard3D(0.5,0.2)
-NLinhard3D_ImX([0.5,0,0],0.2)
-
-# finite frequency imaginary part testing
-q = [0.5,0,0]
-wlist = collect(range(0,1,length=21))
-@time res_delta = [NLinhard3D_ImX(q,w) for w in wlist]
-anal = ImLindhard3D.(q[1],wlist)
-
-# deltawithin rule testing
-p1=scatter(wlist[:],-res_delta[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
-plot!(p1,wlist[:],-anal[:],title=L"Im\chi_0(q=0.5k_F,\omega), fractional rule ",label="accurate",color=:black)
-xlabel!(p1,L"\omega/2\epsilon_F")
-ylabel!(p1,L"-Im\chi_0/N(0)")
-
-p2 = scatter(wlist[:],abs.((anal[:]-res_delta[:])./anal[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
-xlabel!(p2,L"\omega/2\epsilon_F")
+begin
+p2 = scatter(qlist[:],abs.((anal_Re[:]-res_Re[:])./anal_Re[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
+xlabel!(p2,"q/kF")
 ylabel!(p2,"err")
 yaxis!(p2,:log10)
+end
+
+begin
+    p1=scatter(qlist[:],-res_Im[:],markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,label="numerical")
+    plot!(p1,qlist[:],-anal_Im[:],title=L"Im\chi_0(q=0.5k_F,\omega)",label="accurate",color=:black)
+    xlabel!(p1,"q/kF")
+    ylabel!(p1,L"-\chi_0/N(0)")
+end
+    
+begin
+    p2 = scatter(qlist[:],abs.((anal_Im[:]-res_Im[:])./anal_Im[:]),markershape=:cross,markersize=2,markerstrokewidth=0,color=:red,legend=false,title="relative error")
+    xlabel!(p2,"q/kF")
+    ylabel!(p2,"err")
+    yaxis!(p2,:log10)
+end
 

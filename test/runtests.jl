@@ -3,7 +3,6 @@ using BZIntegral.BZInt2D
 using Test
 
 newaxis = [CartesianIndex()]
-zeros(3)[:,newaxis,newaxis]
 
 function KmeshGen3D(kxrange,kyrange,kzrange,SIZE)
     kx = range(kxrange[1],kxrange[2],length=SIZE[1])
